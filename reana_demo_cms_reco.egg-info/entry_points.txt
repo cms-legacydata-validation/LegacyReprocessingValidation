@@ -1,0 +1,2 @@
+[console_scripts]
+cms-reco = cms_reco.cli:cms_reco

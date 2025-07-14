@@ -1,0 +1,45 @@
+version: 0.6.0
+
+inputs:
+  files:
+    - src/PhysicsObjectsHistos.cc
+    - BuildFile.xml
+    - demoanalyzer_cfg.py
+
+workflow:
+  resources:
+    cvmfs:
+      - cms-opendata-conddb.cern.ch
+  type: serial
+  specification:
+    steps:
+      - environment: 'docker.io/cmsopendata/cmssw_5_3_32'
+        compute_backend: kubernetes
+        commands:
+        - >
+            source /opt/cms/cmsset_default.sh
+            && scramv1 project CMSSW CMSSW_5_3_32
+            && cd CMSSW_5_3_32/src
+            && eval `scramv1 runtime -sh`
+            && mkdir Reconstruction && cd Reconstruction
+            && mkdir Validation && cd Validation
+            && cmsDriver.py reco -s RAW2DIGI,L1Reco,RECO,USER:EventFilter/HcalRawToDigi/hcallaserhbhehffilter2012_cff.hcallLaser2012Filter --data --filein='root://eospublic.cern.ch//eos/opendata/cms/Run2011A/DoubleElectron/RAW/v1/000/160/431/080D15C9-FF4D-E011-9484-0030487C7828.root' --conditions 76X_dataRun2_16Dec2015_v0::All --eventcontent AOD  --no_exec --python reco_cmsdriver.py
+            && sed -i 's/from Configuration.AlCa.GlobalTag import GlobalTag/process.GlobalTag.connect = cms.string("sqlite_file:\/cvmfs\/cms-opendata-conddb.cern.ch\/76X_dataRun2_16Dec2015_v0.db")/g' reco_cmsdriver.py
+            && sed -i 's/# Other statements/from Configuration.AlCa.GlobalTag import GlobalTag/g' reco_cmsdriver.py
+            && sed -i "s/process.GlobalTag = GlobalTag(process.GlobalTag, '76X_dataRun2_16Dec2015_v0::All', '')/process.GlobalTag.globaltag = '76X_dataRun2_16Dec2015_v0::All'/g" reco_cmsdriver.py
+            && ln -sf /cvmfs/cms-opendata-conddb.cern.ch/76X_dataRun2_16Dec2015_v0 76X_dataRun2_16Dec2015_v0
+            && ln -sf /cvmfs/cms-opendata-conddb.cern.ch/76X_dataRun2_16Dec2015_v0.db 76X_dataRun2_16Dec2015_v0.db
+            && ls -l
+            && ls -l /cvmfs/
+            && cmsRun reco_cmsdriver.py
+            && mkdir src
+            && scp ../../../../src/PhysicsObjectsHistos.cc ./src
+            && scp ../../../../BuildFile.xml .
+            && scp ../../../../demoanalyzer_cfg.py .
+            && scram b
+            && cmsRun demoanalyzer_cfg.py
+
+outputs:
+  files:
+    - CMSSW_5_3_32/src/Reconstruction/Validation/reco_RAW2DIGI_L1Reco_RECO_USER.root
+    - CMSSW_5_3_32/src/Reconstruction/Validation/histodemo.root

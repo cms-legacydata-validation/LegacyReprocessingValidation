@@ -1,0 +1,9 @@
+click>=7
+cookiecutter>=1.6.0
+jq>=0.1.6
+
+[all]
+pytest-reana<0.10.0,>=0.9.1
+
+[tests]
+pytest-reana<0.10.0,>=0.9.1

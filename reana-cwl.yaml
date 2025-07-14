@@ -1,0 +1,7 @@
+version: 0.6.0
+inputs:
+  parameters:
+    input: workflow/input.yml
+workflow:
+  type: cwl
+  file: workflow/workflow.cwl

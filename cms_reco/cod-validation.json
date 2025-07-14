@@ -1,0 +1,6 @@
+{
+  "years": ["2010", "2011", "2012"],
+  "workflow_engines": ["serial", "cwl", "yadage"],
+  "compute_backends": ["kubernetes", "htcondorcern"],
+  "file_selection": ["first", "smallest", "largest", "random", "all"]
+}

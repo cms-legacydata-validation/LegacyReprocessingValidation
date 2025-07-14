@@ -1,0 +1,9 @@
+library:
+  class: File
+  path: src/PhysicsObjectsHistos.cc
+build_file:
+  class: File
+  path: BuildFile.xml
+validation_script:
+  class: File
+  path: demoanalyzer_cfg.py
