@@ -18,7 +18,6 @@ import traceback
 import urllib.request as ur
 from random import randint
 
-import jq
 
 try:
     validation_file = open(f"{os.getcwd()}/cms_reco/cod-validation.json")
@@ -49,11 +48,16 @@ def get_config_from_json(file_selection, config_file):
     conf = {'error': None}
 
     try:
-        conf['directory_name'] = custom_directory_name(data)
-        conf['year'] = get_year(data)
-        conf['cmssw_version'] = get_cms_release(data)
-        conf['global_tag'], conf['global_tag_suffix'] = get_global_tag(data)
-        conf['dataset_file'] = get_dataset(data, file_selection)
+        # Extract recid from the JSON data
+        recid = data.get('recid')
+        if not recid:
+            raise ValueError("No recid found in config file")
+        
+        conf['directory_name'] = custom_directory_name(recid)
+        conf['year'] = get_year(recid)
+        conf['cmssw_version'] = get_cms_release(recid)
+        conf['global_tag'], conf['global_tag_suffix'] = get_global_tag(recid)
+        conf['dataset_file'] = get_dataset(recid, file_selection)
     except Exception as e:
         conf['error'] = "Cannot retrieve config due to: {0}".format(e)
         traceback.print_exc()
@@ -61,9 +65,12 @@ def get_config_from_json(file_selection, config_file):
     return conf
 
 
-def get_global_tag(data):
+def get_global_tag(recid):
     """Get the global tag for the CMS cond db."""
-    global_tag = jq.jq(".system_details.global_tag").transform(data)
+    result = sp.run(["cernopendata-client", "get-metadata", "--recid", str(recid), 
+                     "--output-value", "system_details.global_tag"], 
+                    stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
+    global_tag = result.stdout.strip()
 
     # The global tag value contains sometimes the"::All" suffix
     if "::All" in global_tag:
@@ -78,9 +85,12 @@ def get_global_tag(data):
     return global_tag, suffix
 
 
-def get_cms_release(data):
+def get_cms_release(recid):
     """Get the CMS SW release version."""
-    release = jq.jq(".system_details.release").transform(data)
+    result = sp.run(["cernopendata-client", "get-metadata", "--recid", str(recid), 
+                     "--output-value", "system_details.release"], 
+                    stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
+    release = result.stdout.strip()
 
     # Sometimes the release value begins wrongly with a white space
     if " " in release:
@@ -90,10 +100,9 @@ def get_cms_release(data):
     return release[6:]
 
 
-def download_index_file(data, local_file_name, file_format):
+def download_index_file(recid, local_file_name, file_format):
     """Download the index file from COD platform."""
-    recid = get_recid(data)
-    url = get_index_file_name(data, recid, file_format)
+    url = get_index_file_name(recid, file_format)
     if not os.path.isfile(local_file_name):
         ur.urlretrieve(url, local_file_name)
         return local_file_name
@@ -114,28 +123,33 @@ def remove_folder(mydir):
     shutil.rmtree(mydir)
 
 
-def get_index_file_name(data, recid, file_format):
+def get_index_file_name(recid, file_format):
     """Get the dataset specific index file name."""
     if file_format == "json":
-        index_file = jq.jq("._file_indices").transform(data)[0]["key"]
+        result = sp.run(["cernopendata-client", "get-metadata", "--recid", str(recid), 
+                         "--output-value", "_file_indices.key"], 
+                        stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
+        index_file = result.stdout.strip()
     elif file_format == "txt":
-        index_file = jq.jq("._file_indices").transform(data)[1]["key"]
+        result = sp.run(["cernopendata-client", "get-metadata", "--recid", str(recid), 
+                         "--output-value", "_file_indices.key"], 
+                        stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
+        index_file = result.stdout.strip()
     else:
         index_file = None
 
     url = "http://opendata.cern.ch/record/{0}//file_index/{1}" \
         .format(recid, index_file)
-    print(f"Index file URL: {url}")
     return url
 
 
-def get_dataset(data, file_selection, local_file_name="./index",
+def get_dataset(recid, file_selection, local_file_name="./index",
                 file_format="json"):
     """Get a data set file name from the index file."""
     local_file_name += f".{file_format}"
     logging.debug(f"Fetching data set as {local_file_name}")
 
-    download_index_file(data, local_file_name, file_format)
+    download_index_file(recid, local_file_name, file_format)
     dataset = choose_dataset_from_file(file_selection, local_file_name)
 
     remove_additionally_generated_files(local_file_name)
@@ -183,19 +197,28 @@ def choose_dataset_from_file(file_selection, local_file_name):
     return dataset
 
 
-def get_recid(data):
+def get_recid(recid):
     """Get the record id."""
-    return jq.jq(".recid").transform(data)
+    result = sp.run(["cernopendata-client", "get-metadata", "--recid", str(recid), 
+                     "--output-value", "recid"], 
+                    stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
+    return result.stdout.strip()
 
 
-def get_title(data):
+def get_title(recid):
     """Get the data set title."""
-    return jq.jq(".title").transform(data)
+    result = sp.run(["cernopendata-client", "get-metadata", "--recid", str(recid), 
+                     "--output-value", "title"], 
+                    stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
+    return result.stdout.strip()
 
 
-def get_year(data):
+def get_year(recid):
     """Get creation year for the data set."""
-    return jq.jq(".date_created").transform(data)[0]
+    result = sp.run(["cernopendata-client", "get-metadata", "--recid", str(recid), 
+                     "--output-value", "date_created"], 
+                    stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
+    return result.stdout.strip().strip('[]').strip().strip('"')
 
 
 def get_name_from_title(title):
@@ -203,10 +226,10 @@ def get_name_from_title(title):
     return os.path.dirname(os.path.dirname(title))[1:]
 
 
-def custom_directory_name(data):
+def custom_directory_name(recid):
     """Return a custom directory name based on the title."""
-    return "cms-reco-{}-{}".format(get_name_from_title(get_title(data)),
-                                   get_year(data))
+    return "cms-reco-{}-{}".format(get_name_from_title(get_title(recid)),
+                                   get_year(recid))
 
 
 def load_config_from_cod(recid, config_file):
@@ -214,7 +237,7 @@ def load_config_from_cod(recid, config_file):
     _cod_client = ""
     _get_config_cmd = ""
     sp.call(f"cernopendata-client "
-            f"get-metadata --recid {recid} | tee {config_file}",
+            f"get-metadata --recid {recid} > {config_file} 2>/dev/null",
             shell=True)
 
 

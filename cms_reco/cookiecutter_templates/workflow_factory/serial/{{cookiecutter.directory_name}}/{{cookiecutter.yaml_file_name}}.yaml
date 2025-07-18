@@ -7,6 +7,9 @@ inputs:
     - demoanalyzer_cfg.py
 
 workflow:
+  resources:
+    cvmfs:
+      - cms-opendata-conddb.cern.ch
   type: serial
   specification:
     steps:
