@@ -1,8 +1,7 @@
-# REANA example - CMS Reconstruction
+# REANA example - CMS Reconstruction (Legacy Reprocessing Validation)
 
-[![image](https://img.shields.io/pypi/pyversions/reana-demo-cms-reco.svg)](https://pypi.org/pypi/reana-demo-cms-reco)
 [![image](https://img.shields.io/badge/discourse-forum-blue.svg)](https://forum.reana.io)
-[![image](https://img.shields.io/github/license/reanahub/reana.svg)](https://github.com/reanahub/reana-demo-cms-reco/blob/master/LICENSE)
+[![image](https://img.shields.io/github/license/reanahub/reana.svg)](https://github.com/cms-legacydata-validation/LegacyReprocessingValidation/blob/master/LICENSE)
 
 ## About
 
@@ -55,42 +54,50 @@ $ ln -sf /cvmfs/cms-opendata-conddb.cern.ch/FT_53_LV5_AN1_RUNA FT_53_LV5_AN1
 $ ln -sf /cvmfs/cms-opendata-conddb.cern.ch/FT_53_LV5_AN1_RUNA.db FT_53_LV5_AN1_RUNA.db
 ```
 
-For REANA, the condition database on CVMFS can be accessed with any container, the only
-requirement is that the user should specify the necessary CVMFS volumes to be
-live-mounted in the `reana.yaml` resource section, as described
-[here](https://reana.readthedocs.io/en/latest/userguide.html#declare-necessary-resources).
+For REANA, the condition database on CVMFS is automatically mounted via the workflow
+configuration. The generated `reana.yaml` includes the necessary CVMFS resources:
+
+```yaml
+workflow:
+  resources:
+    cvmfs:
+      - cms-opendata-conddb.cern.ch
+```
+
+This provides automatic access to the CMS conditions database without manual setup.
 
 ### 4. Analysis workflow
 
-First, we have to set up the environment variables accordingly for the
-[CMS SW](http://cms-sw.github.io/). Although this is done in the docker image, REANA
-overrides them and they need to be reset. This is done by copying the
-[cms entrypoint.sh script](https://github.com/clelange/cmssw-docker/blob/master/standalone/entrypoint.sh):
+The workflow automatically sets up the CMS environment and handles:
 
-```console
-$ source /opt/cms/cmsset_default.sh
-$ scramv1 project CMSSW CMSSW_5_3_32
-$ cd CMSSW_5_3_32/src
-$ eval `scramv1 runtime -sh`
-```
+1. **Environment Setup**: Configures CMSSW framework
+2. **CVMFS Access**: Mounts CMS conditions database via CVMFS
+3. **Dynamic Configuration**: Uses appropriate CMSSW version and global tags
+4. **Reconstruction**: Runs RAW2DIGI → L1Reco → RECO → USER steps
+5. **Analysis**: Generates physics object histograms
 
-The actual commands that are needed to carry out the analysis in the CMS specific
-environment are then:
+**Key Features:**
+- **CVMFS Integration**: Automatic access to CMS conditions database
+- **Dynamic Container Selection**: Uses appropriate CMSSW version containers
+- **Automatic Configuration**: Downloads metadata from CMS Open Data Portal
+- **Flexible File Selection**: Choose specific files or random samples
 
-```console
-$ ln -sf /cvmfs/cms-opendata-conddb.cern.ch/FT_53_LV5_AN1_RUNA FT_53_LV5_AN1
-$ ln -sf /cvmfs/cms-opendata-conddb.cern.ch/FT_53_LV5_AN1_RUNA.db FT_53_LV5_AN1_RUNA.db
-$ ls -l
-$ ls -l /cvmfs/
-$ cmsRun reco_cmsdriver2011.py
-```
+**Generated Outputs:**
+- `reco_RAW2DIGI_L1Reco_RECO_USER.root`: Reconstructed AOD file
+- `histodemo.root`: Physics object validation histograms
 
 This demo represents a "workflow factory" script that will produce REANA workflows for
 given parameters for the CMS RAW to AOD reconstruction procedure.
 
-Following successful tests (see other branches), we know that REANA is able to run CMS
+This enhanced version includes:
+- **Automatic configuration** from CMS Open Data records via `--recid` parameter
+- **Dynamic container selection** based on CMSSW version
+- **CVMFS integration** for conditions database access
+- **Simplified CLI interface** aligned with the base reana-demo-cms-reco
+
+Following successful tests, we know that REANA is able to run CMS
 reconstruction for a variety of RAW samples (e.g. dataset SingleMu) and data-taking years
-(e.g. 2011).
+(e.g. 2010, 2011, 2012).
 
 ### Example
 
@@ -101,20 +108,64 @@ $ # create new virtual environment
 $ virtualenv ~/.virtualenvs/myreana
 $ source ~/.virtualenvs/myreana/bin/activate
 $ # install reana-commons and reana-client
-$ pip install git+git://github.com/reanahub/reana-demo-cms-reco.git@master#egg=cms-reco
+$ pip install git+https://github.com/cms-legacydata-validation/LegacyReprocessingValidation.git@master#egg=cms-reco
+$ # clone the repository for development
+$ git clone https://github.com/cms-legacydata-validation/LegacyReprocessingValidation.git
+$ cd LegacyReprocessingValidation
 ```
 
-After, the following will generate the workflow to run the example for a given record id,
-with its metadata retrieved using the
-[COD Client](https://github.com/cernopendata/cernopendata-client). This generates a
-workflow in a given output directory, where the `reana.yaml` file lives with all
-necessary inputs:
+## Usage
+
+### Basic Usage
+
+Create a workflow using the default configuration:
 
 ```console
-$ cernopendata-client get-record --recid 39 | tee cms-reco-config.json
-# # use the values from the 'cms-reco-config.json' file
-$ cms-reco --create-workflow
-    Created `cms-reco-SingleElectron-2011` directory.
-$ cd cms-reco-SingleElectron-2011
+$ cms-reco create-workflow --directory my-workflow
+    Created `my-workflow` directory.
+$ cd my-workflow
 $ reana-client run
+```
+
+### Advanced Usage with CMS Open Data Records
+
+Generate a workflow from a specific CMS Open Data record:
+
+```console
+$ cms-reco create-workflow --recid 46 --directory workflow-2011-doubleelectron
+    Created `workflow-2011-doubleelectron` directory.
+$ cd workflow-2011-doubleelectron
+$ reana-client run
+```
+
+### CLI Parameters
+
+The `cms-reco create-workflow` command supports the following options:
+
+- `--recid TEXT`: CMS Open Data record ID for automatic configuration
+- `--directory TEXT`: Directory name for the generated workflow
+- `--nevents TEXT`: Number of events to process (default: 1)
+- `--files [first|smallest|largest|random|all]`: File selection method
+- `--year [2010|2011|2012]`: Data-taking year
+- `--workflow_engine [serial|cwl|yadage]`: Workflow engine to use
+- `--compute_backend [kubernetes|htcondorcern]`: Compute backend
+- `--config_file TEXT`: Configuration file path
+- `--dataset TEXT`: Dataset name (default: DoubleElectron)
+- `--quiet`: Suppress diagnostic output
+
+### Examples
+
+**Process 10 events from a specific record:**
+```console
+$ cms-reco create-workflow --recid 46 --nevents 10 --directory test-10-events
+```
+
+**Create CWL workflow:**
+```console
+$ cms-reco create-workflow --workflow_engine cwl --directory test-cwl
+```
+
+**Use smallest file from dataset:**
+```console
+$ cms-reco create-workflow --files smallest --directory test-smallest
 ```

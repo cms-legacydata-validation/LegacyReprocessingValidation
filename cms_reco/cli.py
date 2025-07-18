@@ -69,25 +69,12 @@ def load_config(recid, config_file):
               default="2011",
               help='year the data set was recorded',
               type=click.Choice(valid_run_years))
-@click.option('--cmssw_version',
-              default=None,
-              help='CMSSW version to use (e.g., 5_3_32, 7_6_7)')
-@click.option('--container_image',
-              default=None,
-              help='custom container image (overrides default cmsopendata image)')
 @click.option('--recid',
               default=None,
               help='CMS Open Data record ID for dataset configuration')
-@click.option('--global_tag',
-              default=None,
-              help='CMS Global Tag for conditions data')
-@click.option('--run_filter',
-              default=None,
-              help='comma-separated list of run numbers to process')
 @cms_reco.command()
 def create_workflow(config_file, compute_backend, dataset, directory, files,
-                    nevents, quiet, workflow_engine, year, cmssw_version,
-                    container_image, recid, global_tag, run_filter):
+                    nevents, quiet, workflow_engine, year, recid):
     """Create workflow from json config file or from given arguments."""
     logging.basicConfig(
         format='[%(levelname)s] %(message)s',
@@ -109,30 +96,11 @@ def create_workflow(config_file, compute_backend, dataset, directory, files,
         # Set REANA (non-COD) related configs
         config['compute_backend'] = compute_backend
 
-        # Override config with command line parameters if provided
-        if cmssw_version:
-            config['cmssw_version'] = cmssw_version
-        if global_tag:
-            config['global_tag'] = global_tag
-            # Update suffix based on version
-            if "53" in global_tag:
-                config['global_tag_suffix'] = "_RUNA"
-            else:
-                config['global_tag_suffix'] = ""
-        
-        # Set container image (either custom or default based on CMSSW version)
-        if container_image:
-            config['container_image'] = container_image
-        else:
-            config['container_image'] = f"docker.io/cmsopendata/cmssw_{config['cmssw_version']}"
-        
         # Set optional configs
         if nevents:
             config['nevents'] = nevents
         if directory:
             config['directory_name'] = directory
-        if run_filter:
-            config['run_filter'] = run_filter
 
         try:
             cookiecutter(get_template(workflow_engine),

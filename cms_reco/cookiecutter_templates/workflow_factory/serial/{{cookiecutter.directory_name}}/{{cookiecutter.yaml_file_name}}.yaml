@@ -13,7 +13,7 @@ workflow:
   type: serial
   specification:
     steps:
-      - environment: '{{cookiecutter.container_image}}'
+      - environment: 'docker.io/cmsopendata/cmssw_{{cookiecutter.cmssw_version}}'
         compute_backend: {{cookiecutter.compute_backend}}
         commands:
         - >

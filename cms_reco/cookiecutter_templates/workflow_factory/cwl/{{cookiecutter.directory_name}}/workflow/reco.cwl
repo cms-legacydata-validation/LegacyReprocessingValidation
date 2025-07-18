@@ -3,7 +3,7 @@ cwlVersion: v1.0
 
 requirements:
   - class: DockerRequirement
-    dockerPull: {{cookiecutter.container_image}}
+    dockerPull: docker.io/cmsopendata/cmssw_{{cookiecutter.cmssw_version}}
 
 baseCommand:
   - /bin/zsh

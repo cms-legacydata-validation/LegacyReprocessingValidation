@@ -2,3 +2,5 @@ test/
 test-*/
 .eggs
 cms-reco-*/
+*.pyc
+ENHANCEMENT_DOCUMENTATION.md
