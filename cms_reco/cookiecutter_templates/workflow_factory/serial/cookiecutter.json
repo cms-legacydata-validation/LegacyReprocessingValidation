@@ -3,9 +3,11 @@
     "compute_backend": "kubernetes",
     "dataset_file": "'root://eospublic.cern.ch//eos/opendata/cms/Run2011A/DoubleElectron/RAW/v1/000/160/433/C046161E-0D4E-E011-BCBA-0030487CD906.root'",
     "directory_name": "my-reco",
+    "files": "first",
     "global_tag": "FT_53_LV5_AN1",
     "global_tag_suffix": "_RUNA",
     "nevents": "1",
+    "recid": "39",
     "yaml_file_name": "reana",
     "year": "2011"
 }

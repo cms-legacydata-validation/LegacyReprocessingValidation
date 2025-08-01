@@ -10,36 +10,142 @@ workflow:
   resources:
     cvmfs:
       - cms-opendata-conddb.cern.ch
-  type: serial
+  type: serial  
   specification:
     steps:
-      - environment: 'docker.io/cmsopendata/cmssw_{{cookiecutter.cmssw_version}}'
-        compute_backend: {{cookiecutter.compute_backend}}
+      - name: fetch-metadata
+        environment: 'docker.io/cernopendata/cernopendata-client'
+        compute_backend: '{{cookiecutter.compute_backend}}'
         commands:
-        - >
+          - >            
+            CMSSW_RELEASE_RAW=$(cernopendata-client get-metadata --recid {{cookiecutter.recid}} --output-value system_details.release)
+            && CMSSW_RELEASE=$(echo "$CMSSW_RELEASE_RAW" | tr -d ' ')
+            && MSSW_VERSION=$(echo "$CMSSW_RELEASE" | sed 's/^CMSSW_//')
+            && GLOBAL_TAG_RAW=$(cernopendata-client get-metadata --recid {{cookiecutter.recid}} --output-value system_details.global_tag)
+            && GLOBAL_TAG=$(echo "$GLOBAL_TAG_RAW" | sed 's/::All//')
+            if [[ "$GLOBAL_TAG" == *"53"* ]]; then
+              GLOBAL_TAG_SUFFIX="_RUNA"
+            else
+              GLOBAL_TAG_SUFFIX=""
+            fi
+            
+            # Get dataset file following utils.py logic
+            # 1. Get index file name using _file_indices.key
+            INDEX_FILE_NAME=$(cernopendata-client get-metadata --recid {{cookiecutter.recid}} --output-value _file_indices.key)
+            echo "Index file name: $INDEX_FILE_NAME"
+            
+            # 2. Download index file from constructed URL
+            INDEX_URL="http://opendata.cern.ch/record/{{cookiecutter.recid}}/file_index/$INDEX_FILE_NAME"
+            echo "Downloading index from: $INDEX_URL"
+            curl -s "$INDEX_URL" > index.json
+            
+            # 3. Parse JSON and select file based on file selection using jq or sed/grep
+            FILE_SELECTION="{{cookiecutter.files}}"
+            if [ "$FILE_SELECTION" = "first" ]; then
+              # Extract first file URI using grep/sed (more portable than jq)
+              DATASET_FILE=$(grep -o '"uri":"[^"]*"' index.json | head -1 | sed 's/"uri":"//' | sed 's/"//')
+            elif [ "$FILE_SELECTION" = "smallest" ]; then
+              # For now, just use first file - size-based sorting would need more complex shell logic
+              DATASET_FILE=$(grep -o '"uri":"[^"]*"' index.json | head -1 | sed 's/"uri":"//' | sed 's/"//')
+            elif [ "$FILE_SELECTION" = "largest" ]; then
+              # For now, just use first file - size-based sorting would need more complex shell logic  
+              DATASET_FILE=$(grep -o '"uri":"[^"]*"' index.json | head -1 | sed 's/"uri":"//' | sed 's/"//')
+            elif [ "$FILE_SELECTION" = "random" ]; then
+              # Get random file using shuf if available, otherwise first
+              DATASET_FILE=$(grep -o '"uri":"[^"]*"' index.json | shuf -n 1 2>/dev/null | sed 's/"uri":"//' | sed 's/"//' || grep -o '"uri":"[^"]*"' index.json | head -1 | sed 's/"uri":"//' | sed 's/"//')
+            else
+              DATASET_FILE=$(grep -o '"uri":"[^"]*"' index.json | head -1 | sed 's/"uri":"//' | sed 's/"//')
+            fi
+            
+            # Get year (strip brackets and quotes like utils.py)
+            YEAR=$(cernopendata-client get-metadata --recid {{cookiecutter.recid}} --output-value date_created | tr -d '[]"' | tr -d ' ')
+            
+            # Get title for directory name (mimic custom_directory_name logic)
+            TITLE=$(cernopendata-client get-metadata --recid {{cookiecutter.recid}} --output-value title)
+            DATASET_NAME=$(echo "$TITLE" | sed 's|^/||' | sed 's|/.*||')
+            
+            # Create simple key=value configuration file (shell-readable)
+            cat > cms_config.sh << 'EOF'
+            #!/bin/bash
+            EOF
+            echo "CMSSW_RELEASE=\"$CMSSW_RELEASE\"" >> cms_config.sh
+            echo "CMSSW_VERSION=\"$CMSSW_VERSION\"" >> cms_config.sh
+            echo "GLOBAL_TAG=\"$GLOBAL_TAG\"" >> cms_config.sh
+            echo "GLOBAL_TAG_SUFFIX=\"$GLOBAL_TAG_SUFFIX\"" >> cms_config.sh
+            echo "DATASET_FILE=\"$DATASET_FILE\"" >> cms_config.sh
+            echo "YEAR=\"$YEAR\"" >> cms_config.sh
+            echo "DATASET_NAME=\"$DATASET_NAME\"" >> cms_config.sh
+            echo "NEVENTS=\"{{cookiecutter.nevents}}\"" >> cms_config.sh
+            
+            echo "Generated configuration:"
+            cat cms_config.sh
+            
+            # Clean up index file like utils.py does
+            rm -f index.json
+
+      - name: cms-reconstruction
+        environment: 'docker.io/cmsopendata/cmssw_{{cookiecutter.cmssw_version}}'
+        compute_backend: '{{cookiecutter.compute_backend}}'
+        commands:
+          - |
+            # Source configuration
+            source cms_config.sh
+            
+            echo "Using configuration:"
+            echo "CMSSW Release: $CMSSW_RELEASE" 
+            echo "CMSSW Version: $CMSSW_VERSION"
+            echo "Global Tag: $GLOBAL_TAG"
+            echo "Dataset File: $DATASET_FILE"
+            echo "Number of Events: $NEVENTS"
+            
+            # Setup CMSSW environment (use full release string)
             source /opt/cms/cmsset_default.sh
-            && scramv1 project CMSSW CMSSW_{{cookiecutter.cmssw_version}}
-            && cd CMSSW_{{cookiecutter.cmssw_version}}/src
-            && eval `scramv1 runtime -sh`
-            && mkdir Reconstruction && cd Reconstruction
-            && mkdir Validation && cd Validation
-            && cmsDriver.py reco -s RAW2DIGI,L1Reco,RECO,USER:EventFilter/HcalRawToDigi/hcallaserhbhehffilter2012_cff.hcallLaser2012Filter --data --filein='{{cookiecutter.dataset_file}}' --conditions {{cookiecutter.global_tag}}::All --eventcontent AOD -n {{cookiecutter.nevents}} --no_exec --python reco_cmsdriver.py
-            && sed -i 's/from Configuration.AlCa.GlobalTag import GlobalTag/process.GlobalTag.connect = cms.string("sqlite_file:\/cvmfs\/cms-opendata-conddb.cern.ch\/{{cookiecutter.global_tag}}{{cookiecutter.global_tag_suffix}}.db")/g' reco_cmsdriver.py
-            && sed -i 's/# Other statements/from Configuration.AlCa.GlobalTag import GlobalTag/g' reco_cmsdriver.py
-            && sed -i "s/process.GlobalTag = GlobalTag(process.GlobalTag, '{{cookiecutter.global_tag}}::All', '')/process.GlobalTag.globaltag = '{{cookiecutter.global_tag}}::All'/g" reco_cmsdriver.py
-            && ln -sf /cvmfs/cms-opendata-conddb.cern.ch/{{cookiecutter.global_tag}}{{cookiecutter.global_tag_suffix}} {{cookiecutter.global_tag}}
-            && ln -sf /cvmfs/cms-opendata-conddb.cern.ch/{{cookiecutter.global_tag}}{{cookiecutter.global_tag_suffix}}.db {{cookiecutter.global_tag}}{{cookiecutter.global_tag_suffix}}.db
-            && ls -l
-            && ls -l /cvmfs/
-            && cmsRun reco_cmsdriver.py
-            && mkdir src
-            && scp ../../../../src/PhysicsObjectsHistos.cc ./src
-            && scp ../../../../BuildFile.xml .
-            && scp ../../../../demoanalyzer_cfg.py .
-            && scram b
-            && cmsRun demoanalyzer_cfg.py
+            scramv1 project CMSSW $CMSSW_RELEASE
+            cd $CMSSW_RELEASE/src
+            eval `scramv1 runtime -sh`
+            
+            # Create reconstruction directory
+            mkdir Reconstruction && cd Reconstruction
+            mkdir Validation && cd Validation
+            
+            # Generate reconstruction configuration
+            cmsDriver.py reco -s RAW2DIGI,L1Reco,RECO,USER:EventFilter/HcalRawToDigi/hcallaserhbhehffilter2012_cff.hcallLaser2012Filter \
+              --data \
+              --filein="$DATASET_FILE" \
+              --conditions "$GLOBAL_TAG::All" \
+              --eventcontent AOD \
+              -n $NEVENTS \
+              --no_exec \
+              --python reco_cmsdriver.py
+            
+            # Modify the configuration file for CVMFS database access
+            sed -i "s/from Configuration.AlCa.GlobalTag import GlobalTag/process.GlobalTag.connect = cms.string(\"sqlite_file:\/cvmfs\/cms-opendata-conddb.cern.ch\/$GLOBAL_TAG$GLOBAL_TAG_SUFFIX.db\")/g" reco_cmsdriver.py
+            sed -i 's/# Other statements/from Configuration.AlCa.GlobalTag import GlobalTag/g' reco_cmsdriver.py
+            sed -i "s/process.GlobalTag = GlobalTag(process.GlobalTag, '$GLOBAL_TAG::All', '')/process.GlobalTag.globaltag = '$GLOBAL_TAG::All'/g" reco_cmsdriver.py
+            
+            # Create symbolic links for database access
+            ln -sf /cvmfs/cms-opendata-conddb.cern.ch/$GLOBAL_TAG$GLOBAL_TAG_SUFFIX $GLOBAL_TAG
+            ln -sf /cvmfs/cms-opendata-conddb.cern.ch/$GLOBAL_TAG$GLOBAL_TAG_SUFFIX.db $GLOBAL_TAG$GLOBAL_TAG_SUFFIX.db
+            
+            # List files for debugging
+            ls -l
+            ls -l /cvmfs/
+            
+            # Run reconstruction
+            cmsRun reco_cmsdriver.py
+            
+            # Setup analysis
+            mkdir src
+            cp ../../../../src/PhysicsObjectsHistos.cc ./src
+            cp ../../../../BuildFile.xml .
+            cp ../../../../demoanalyzer_cfg.py .
+            
+            # Build and run analysis
+            scram b
+            cmsRun demoanalyzer_cfg.py
 
 outputs:
   files:
     - CMSSW_{{cookiecutter.cmssw_version}}/src/Reconstruction/Validation/reco_RAW2DIGI_L1Reco_RECO_USER.root
     - CMSSW_{{cookiecutter.cmssw_version}}/src/Reconstruction/Validation/histodemo.root
+    - cms_config.sh

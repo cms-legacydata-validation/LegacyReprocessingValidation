@@ -95,6 +95,8 @@ def create_workflow(config_file, compute_backend, dataset, directory, files,
 
         # Set REANA (non-COD) related configs
         config['compute_backend'] = compute_backend
+        # Always add recid from CLI parameter (overrides any from JSON)
+        config['recid'] = str(recid) if recid else None
 
         # Set optional configs
         if nevents:
